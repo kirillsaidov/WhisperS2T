@@ -151,7 +151,7 @@ def load_audio(input_file: str | bytes | np.ndarray, sr: int = 16000, return_dur
 # def audio_batch_generator(audio_files):
 #     return THREAD_POOL_AUDIO_LOADER.imap(load_audio, audio_files)
 
-
+ 
 def audio_batch_generator(audio_files: list, parallel: bool = True, max_workers: int = 2):
     """
     Generate batches of loaded audio files, with option for parallel or sequential loading.
