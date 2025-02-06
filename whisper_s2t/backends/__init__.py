@@ -1,10 +1,13 @@
 import torch
+import whisper
+import numpy as np
+from ctranslate2 import StorageView
 from tqdm import tqdm
 from abc import ABC, abstractmethod
 
 from ..configs import *
 from ..data import WhisperDataLoader
-from ..audio import LogMelSpectogram
+from ..audio import LogMelSpectogram, load_audio
 from ..speech_segmenter import SpeechSegmenter
 
 
@@ -109,9 +112,38 @@ class WhisperModel(ABC):
     @abstractmethod
     def generate_segment_batched(self, features, prompts):
         pass
-        
+    
+
+    def detect_language(self, audio_files: str | bytes | np.ndarray | list) -> list[tuple[str, float]]:
+        """Detect language
+
+        Args:
+            audio_files (str | bytes | np.ndarray | list): path to audio file, audio loaded to memory as bytes or audio loaded as numpy ndarray
+
+        Returns:
+            list[tuple[str, float]]: list of tuples (language code, language probability)
+        """
+        audio_files = [audio_files] if not isinstance(audio_files, list) else audio_files
+        responses = []
+        for audio_file in audio_files:
+            # load audio
+            audio = load_audio(audio_file)
+            audio = whisper.pad_or_trim(audio)
+
+            # compute the log-mel spectrogram of the audio
+            mel = whisper.log_mel_spectrogram(audio).numpy().astype(np.float32)
+            mel = np.expand_dims(mel, axis=0)
+            features = StorageView.from_array(mel)
+
+            # run the model to detect the language
+            results = self.model.detect_language(features)
+            det_lang_code, det_lang_prob = results[0][0]
+            responses.append((det_lang_code.strip('<|>'), det_lang_prob))
+        return responses
+
+    
     @torch.no_grad()
-    def transcribe(self, audio_files, lang_codes=None, tasks=None, initial_prompts=None, batch_size=8, progress_bar=True):
+    def transcribe(self, audio_files: str | bytes | np.ndarray | list, lang_codes=None, tasks=None, initial_prompts=None, batch_size=8, progress_bar=True):
         
         # if lang_codes == None:
         #     lang_codes = len(audio_files)*['en']
@@ -168,8 +200,9 @@ class WhisperModel(ABC):
                     })
         return responses        
 
+
     @torch.no_grad()
-    def transcribe_with_vad(self, audio_files, lang_codes=None, tasks=None, initial_prompts=None, batch_size=8, progress_bar=True):
+    def transcribe_with_vad(self, audio_files: str | bytes | np.ndarray | list, lang_codes=None, tasks=None, initial_prompts=None, batch_size=8, progress_bar=True):
         lang_codes = fix_batch_param(lang_codes, 'en', len(audio_files))
         tasks = fix_batch_param(tasks, 'transcribe', len(audio_files))
         initial_prompts = fix_batch_param(initial_prompts, None, len(audio_files))
